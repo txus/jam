@@ -8,6 +8,17 @@ It's written in Rust (interfacing with WebAudio API), compiled to WebAssembly an
 
 For now I'm just playing around! Definitely not very usable.
 
+## Running
+
+```
+cargo build
+npm install
+npm run serve
+open localhost:8080
+```
+
+Connect your MIDI controller and turn the synth power ON! :)
+
 ## Modules
 
 ### Subjam
