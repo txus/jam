@@ -149,10 +149,11 @@ impl Oscillator {
     }
   }
 
+#[wasm_bindgen]
 pub struct Subjam {
     ctx: AudioContext,
-    pub osc1: Oscillator,
-    pub osc2: Oscillator
+    osc1: Oscillator,
+    osc2: Oscillator
 }
 
 #[wasm_bindgen]
@@ -210,6 +211,12 @@ impl Subjam {
 
     #[wasm_bindgen]
     pub fn set_amp_mix(&mut self, osc1_gain: f32) {
+        self.osc1.set_gain(osc1_gain);
+        self.osc2.set_gain(1.0 - osc1_gain);
+    }
+
+    #[wasm_bindgen]
+    pub fn set_osc_mix(&mut self, osc1_gain: f32) {
         self.osc1.set_gain(osc1_gain);
         self.osc2.set_gain(1.0 - osc1_gain);
     }
