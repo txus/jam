@@ -6,18 +6,28 @@
                 <Knob v-on:change="onOscMixChange" :initial="osc_mix" v-bind:min=0 v-bind:max=1.0 label="Osc Mix" ringType='split'/>
                 <b-form-select :value="osc2_type" :options="osc_types" v-on:change="onOsc2TypeChange" class="osc-type"></b-form-select>
             </div>
-            <div class="vertical-knobs">
-                <Knob v-on:change="onCutoffChange" :initial="cutoff" v-bind:min=0 v-bind:max=8000 label="Cutoff" ringType='negative'/>
-                <Knob v-on:change="onResonanceChange" :initial="resonance" v-bind:min=0 v-bind:max=25.0 label="Resonance" ringType='positive'/>
-            </div>
         </div>
         <div class="amp-envelope">
             <Envelope
-            v-bind:adsr="env_adsr"
+            visualizer="true"
+            v-bind:adsr="amp_adsr"
             v-on:onAttack="onAmpAttack"
             v-on:onDecay="onAmpDecay"
             v-on:onSustain="onAmpSustain"
             v-on:onRelease="onAmpRelease" />
+        </div>
+        <div class="filter">
+            <h3>LP Filter</h3>
+                <div class="horizontal-knobs">
+                <Knob v-on:change="onCutoffChange" :initial="cutoff" v-bind:min=0 v-bind:max=8000 label="Cutoff" ringType='negative'/>
+                <Knob v-on:change="onResonanceChange" :initial="resonance" v-bind:min=0 v-bind:max=25.0 label="Resonance" ringType='positive'/>
+            </div>
+            <Envelope
+            v-bind:adsr="filter_adsr"
+            v-on:onAttack="onFilterAttack"
+            v-on:onDecay="onFilterDecay"
+            v-on:onSustain="onFilterSustain"
+            v-on:onRelease="onFilterRelease" />
         </div>
     </div>
 </template>
@@ -76,9 +86,18 @@ export default {
                 return 0.0;
             }
         },
-        env_adsr: function() {
+        amp_adsr: function() {
             if (this.subjam) {
-                let env = this.subjam.get_osc1_env();
+                let env = this.subjam.get_osc1_amp_env();
+                return [env.attack, env.decay, env.sustain, env.release]
+            } else {
+                let env = this.rust.default_envelope();
+                return [env.attack, env.decay, env.sustain, env.release]
+            }
+        },
+        filter_adsr: function() {
+            if (this.subjam) {
+                let env = this.subjam.get_osc1_filter_env();
                 return [env.attack, env.decay, env.sustain, env.release]
             } else {
                 let env = this.rust.default_envelope();
@@ -117,22 +136,42 @@ export default {
         },
         onAmpAttack: function(v) {
             if (this.subjam) {
-                this.subjam.set_env_attack(v);
+                this.subjam.set_amp_attack(v);
             }
         },
         onAmpDecay: function(v) {
             if (this.subjam) {
-                this.subjam.set_env_decay(v);
+                this.subjam.set_amp_decay(v);
             }
         },
         onAmpSustain: function(v) {
             if (this.subjam) {
-                this.subjam.set_env_sustain(v);
+                this.subjam.set_amp_sustain(v);
             }
         },
         onAmpRelease: function(v) {
             if (this.subjam) {
-                this.subjam.set_env_release(v);
+                this.subjam.set_amp_release(v);
+            }
+        },
+        onFilterAttack: function(v) {
+            if (this.subjam) {
+                this.subjam.set_filter_attack(v);
+            }
+        },
+        onFilterDecay: function(v) {
+            if (this.subjam) {
+                this.subjam.set_filter_decay(v);
+            }
+        },
+        onFilterSustain: function(v) {
+            if (this.subjam) {
+                this.subjam.set_filter_sustain(v);
+            }
+        },
+        onFilterRelease: function(v) {
+            if (this.subjam) {
+                this.subjam.set_filter_release(v);
             }
         },
     }
@@ -167,8 +206,15 @@ export default {
     display: flex;
     flex-direction: column;
 }
+.horizontal-knobs {
+    display: flex;
+    flex-direction: row;
+}
 .amp-envelope {
     right: 0;
+}
+h3 {
+    color: #EEE;
 }
 </style>
 

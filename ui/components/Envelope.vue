@@ -1,6 +1,6 @@
 <template>
   <div class="envelope">
-      <EnvelopeVisualizer
+      <EnvelopeVisualizer v-if="visualizer"
         v-bind:max=10
         v-bind:attack="attack"
         v-bind:decay="decay"
@@ -22,7 +22,7 @@ import Vue from 'vue';
 import EnvelopeVisualizer from './EnvelopeVisualizer.vue';
 export default {
   name: 'Envelope',
-  props: ['adsr'],
+  props: ['adsr', 'visualizer'],
   components: { Knob, EnvelopeVisualizer },
   data: function() {
     console.log(this.adsr);
