@@ -8,7 +8,7 @@ edition = "2018"
 crate-type = ["cdylib"]
 
 [dependencies]
-wasm-bindgen = "0.2.42"
+wasm-bindgen = { version = "0.2.42", features = ['serde-serialize'] }
 
 [dependencies.web-sys]
 version = "0.3.4"

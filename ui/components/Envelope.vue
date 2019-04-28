@@ -25,6 +25,7 @@ export default {
   props: ['adsr'],
   components: { Knob, EnvelopeVisualizer },
   data: function() {
+    console.log(this.adsr);
     return {
       attack: this.adsr[0],
       decay: this.adsr[1],
@@ -58,7 +59,6 @@ export default {
 $envelope-knob-size: 80px;
 $tension-knob-size: 60px;
 .envelope {
-  margin: 0px auto;
   width: 600px;
   padding: 20px;
   overflow: hidden;
