@@ -23,4 +23,4 @@ Connect your MIDI controller and turn the synth power ON! :)
 
 ### Subjam
 
-A basic monophonic 2-oscillator synth with an amp envelope.
+A basic polyphonic 2-oscillator synth with an amp envelope and a low pass filter.
