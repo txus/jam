@@ -43,7 +43,10 @@ export default {
       if (is_on) {
         this.audioContext = new AudioContext();
         this.mixer = new this.rust.Mixer(this.audioContext, 4);
-        this.subjam = new this.rust.Subjam(this.audioContext);
+        this.subjam = new this.rust.Subjam(this.audioContext, document.bus);
+
+        console.log(document.trigger);
+
         this.subjam.connect_to_mixer(this.mixer, 0);
         this.mixer.connect_to_speakers();
         this.$forceUpdate();

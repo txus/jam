@@ -117,8 +117,9 @@ export default {
             }
         },
         onOscMixChange: function (v) {
+            console.log("Setting osc mix", v);
+            document.trigger("subjam.osc_mix", v);
             if (this.subjam) {
-                console.log("Setting osc mix", v);
                 this.subjam.set_osc_mix(v);
             }
         },

@@ -1,6 +1,14 @@
 use wasm_bindgen::prelude::*;
 use web_sys::console;
+use web_sys::window;
+use js_sys;
 use web_sys::{AudioContext, AudioNode, BiquadFilterType, OscillatorType, OscillatorNode, GainNode, BiquadFilterNode, AudioParam};
+mod audio;
+mod cv;
+mod bus;
+use audio::{AudioInput, AudioOutput, AudioInputs};
+
+use bus::EventBus;
 
 /// Converts a midi note to frequency
 ///
@@ -80,14 +88,6 @@ impl Filter {
     }
 }
 
-pub trait AudioInput {
-    fn input(&self) -> AudioNode;
-}
-
-pub trait AudioOutput {
-    fn output(&self) -> AudioNode;
-}
-
 impl AudioInput for Filter {
     fn input(&self) -> AudioNode {
         self.filter.clone().into()
@@ -116,20 +116,6 @@ impl AudioOutput for Channel {
     fn output(&self) -> AudioNode {
         self.gain.clone().into()
     }
-}
-
-pub trait AudioInputs {
-    fn inputs(&self) -> Vec<AudioNode>;
-}
-
-pub fn connect<F: AudioOutput, T: AudioInput>(from: &F, to: &T) {
-    from.output().connect_with_audio_node(&to.input()).unwrap();
-}
-
-pub fn connect_to_one<F: AudioOutput, T: AudioInputs>(from: &F, to: &T, at: usize) {
-    let inputs = to.inputs();
-    assert!(at < inputs.len(), "index beyond limit");
-    from.output().connect_with_audio_node(&inputs[at]).unwrap();
 }
 
 use std::collections::HashMap;
@@ -244,7 +230,7 @@ impl Voice {
 
         // Decay
         let decay_time = TIME_PADDING + decay_s;
-        
+
         // Calculate sustain
         let cutoff = filter_frequency as f32;
         let cutoff_pct = cutoff / (FILTER_MAX_FREQ as f32) * 100.0;
@@ -269,6 +255,7 @@ impl Voice {
 }
 
 pub struct Oscillator {
+    name: String,
     ctx: AudioContext,
     voices: Vec<Voice>,
     last_voice: usize,
@@ -280,11 +267,14 @@ pub struct Oscillator {
     pub filter_resonance: f32,
     playing_notes: HashMap<u8, usize>,
     amp: GainNode,
-    gain: f32,
+    gain: Rc<RefCell<f32>>,
 }
 
+use std::rc::Rc;
+use std::cell::RefCell;
+
 impl Oscillator {
-    pub fn new(ctx: AudioContext, polyphony: usize, unison: usize, filter_frequency: u32, filter_resonance: f32) -> Result<Oscillator, JsValue> {
+    pub fn new(name: String, ctx: AudioContext, polyphony: usize, unison: usize, filter_frequency: u32, filter_resonance: f32) -> Result<Oscillator, JsValue> {
         let amp_env: Envelope = Default::default();
         let filter_env: Envelope = Default::default();
         let amp = ctx.create_gain()?;
@@ -296,11 +286,21 @@ impl Oscillator {
             voices.push(v);
         }
 
+        let gain_control = Rc::new(RefCell::new(0.9));
+
+        let bus = unsafe { get_bus() };
+        let control = gain_control.clone();
+        bus.control(format!("{}.gain", name), 0.9, Box::new(move |v| {
+            let mut g = control.borrow_mut();
+            *g = v;
+        }));
+
         let osc_type = OscillatorType::Sine;
 
         let mut o = Oscillator {
+            name,
             playing_notes: HashMap::new(),
-            gain: 0.9,
+            gain: gain_control.clone(),
             polyphony,
             filter_frequency,
             filter_resonance,
@@ -368,7 +368,8 @@ impl Oscillator {
 
         let voice = &mut self.voices[current_voice];
         voice.set_freq(&self.ctx, midi_to_freq(note));
-        voice.amp_envelope_start(&self.ctx, &self.amp_env, self.gain, velocity);
+        let g = self.gain.borrow();
+        voice.amp_envelope_start(&self.ctx, &self.amp_env, *g, velocity);
         voice.filter_envelope_start(&self.ctx, &self.filter_env, self.filter_frequency);
     }
 
@@ -389,17 +390,6 @@ impl Oscillator {
         for v in &mut self.voices {
             v.set_waveform(waveform);
         }
-    }
-
-    pub fn set_gain(&mut self, g: f32) {
-        let gain = if g > 1.0 {
-            1.0
-        } else if g < 0.0 {
-            0.0
-        } else {
-            g
-        };
-        self.gain = gain;
     }
 
     pub fn set_amp_attack(&mut self, v: u32) {
@@ -486,7 +476,7 @@ impl Mixer {
 
         let channels: Vec<Channel> = (0..channel_count).map(|_| {
             let c = Channel::new(ctx.clone()).unwrap();
-            connect(&c, &master);
+            audio::connect(&c, &master);
             c
         }).collect();
 
@@ -543,33 +533,18 @@ impl AudioOutput for Subjam {
     }
 }
 
-pub struct LFO {
-    osc: OscillatorNode,
-    frequency: f32,
-}
-
-impl LFO {
-    pub fn new(ctx: &AudioContext) -> Result<LFO, JsValue> {
-        let osc = ctx.create_oscillator()?;
-        let frequency = 1.5;
-        let lfo = LFO {
-            osc,
-            frequency
-        };
-        Ok(lfo)
-    }
-}
-
 #[wasm_bindgen]
 impl Subjam {
     #[wasm_bindgen(constructor)]
     pub fn new(ctx: AudioContext) -> Result<Subjam, JsValue> {
+        let bus = unsafe { get_bus() };
+
         let polyphony = 16;
         let unison = 1;
         let filter_frequency = FILTER_MAX_FREQ;
         let filter_q = 0.0;
-        let mut osc1 = Oscillator::new(ctx.clone(), polyphony, unison, filter_frequency, filter_q)?;
-        let mut osc2 = Oscillator::new(ctx.clone(), polyphony, unison, filter_frequency, filter_q)?;
+        let mut osc1 = Oscillator::new("subjam.osc1".to_string(), ctx.clone(), polyphony, unison, filter_frequency, filter_q)?;
+        let mut osc2 = Oscillator::new("subjam.osc2".to_string(), ctx.clone(), polyphony, unison, filter_frequency, filter_q)?;
 
         let gain = ctx.clone().create_gain()?;
         gain.gain().set_value_at_time(0.5, ctx.current_time())?;
@@ -577,13 +552,19 @@ impl Subjam {
         osc1.set_waveform(OscillatorType::Sawtooth);
         osc2.set_waveform(OscillatorType::Square);
 
+        bus.control("subjam.osc_mix".to_string(), 0.5, Box::new(|v| {
+            let b = unsafe { get_bus() };
+            b.trigger("subjam.osc1.gain".to_string(), 1.0 - v);
+            b.trigger("subjam.osc2.gain".to_string(), v);
+        }));
+
         osc1.on();
         osc2.on();
 
         osc1.connect_with_audio_node(&gain)?;
         osc2.connect_with_audio_node(&gain)?;
 
-        let mut subjam = Subjam {
+        let subjam = Subjam {
             osc_mix: 0.5,
             osc1,
             osc2,
@@ -591,8 +572,6 @@ impl Subjam {
             filter_q,
             out: gain,
         };
-
-        subjam.set_osc_mix(0.5);
 
         Ok(subjam)
     }
@@ -699,13 +678,6 @@ impl Subjam {
     }
 
     #[wasm_bindgen]
-    pub fn set_osc_mix(&mut self, osc2_gain: f32) {
-        self.osc_mix = osc2_gain;
-        self.osc2.set_gain(osc2_gain);
-        self.osc1.set_gain(1.0 - osc2_gain);
-    }
-
-    #[wasm_bindgen]
     pub fn note_on(&mut self, note: u8, velocity: u8) {
         self.osc1.note_on(note, velocity);
         self.osc2.note_on(note, velocity);
@@ -719,6 +691,45 @@ impl Subjam {
 
     #[wasm_bindgen]
     pub fn connect_to_mixer(&self, mixer: &Mixer, at: usize) {
-        connect_to_one(self, mixer, at);
+        audio::connect_to_one(self, mixer, at);
     }
+}
+
+use std::ptr;
+use std::mem;
+
+static mut _EVENT_BUS_PTR:*const EventBus = 0 as *const EventBus;
+
+unsafe fn get_bus<'a>() -> &'a mut EventBus {
+  if _EVENT_BUS_PTR == ptr::null::<EventBus>() {
+
+    // Notice this is a Box<EventBus>, which is a *EventBus allocated on the heap
+    // transmute(EventBus { v: 0 }) wouldn't work because once the stack scope ends
+    // the instance would no longer be valid; Box<T> lasts beyond the call to get()
+    _EVENT_BUS_PTR = mem::transmute(Box::new(EventBus::new()));
+  }
+  return mem::transmute(_EVENT_BUS_PTR);
+}
+
+unsafe fn release() {
+  ptr::read::<EventBus>(_EVENT_BUS_PTR);
+}
+
+#[wasm_bindgen(start)]
+pub fn run() -> Result<(), JsValue> {
+    let window = window().expect("should have a window in this context");
+    let document = window.document().expect("window should have a document");
+
+    unsafe {
+        let trigger = Closure::wrap(Box::new(|id: String, value: f32| {
+            let bus = get_bus();
+            bus.trigger(id, value);
+        }) as Box<dyn FnMut(String, f32)>);
+
+        js_sys::Reflect::set(&document, &"trigger".into(), &trigger.as_ref())?;
+
+        mem::forget(trigger);
+    }
+
+    Ok(())
 }
